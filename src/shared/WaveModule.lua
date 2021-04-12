@@ -9,7 +9,7 @@ local Player = game:GetService("Players").LocalPlayer
 local default = {
 	WaveLength = 85,
 	Gravity = 1.5,
-	Direction = Vector2.new(1, 0),
+	Direction = Vector2.new(0, 0),
 	FollowPoint = nil,
 	Steepness = 1,
 	TimeModifier = 4,
@@ -32,25 +32,88 @@ local function Gerstner(Position: Vector3, Wavelength: number, Direction: Vector
 	return Vector3.new(dX, dY, dZ)
 end
 
--- Helper function for creating settings table
-local function CreateSettings(newSettings: table)
+-- Helper function for creating settings table (handles warning and error messages)
+local function CreateSettings(new: table)
 	-- Use given settings or use default settings
-	newSettings = newSettings or default
-	local new = {
-		WaveLength = newSettings.WaveLength or default.WaveLength,
-		Gravity = newSettings.Gravity or default.Gravity,
-		Direction = newSettings.Direction or default.Direction,
-		PushPoint = newSettings.PushPoint or default.PushPoint,
-		Steepness = newSettings.Steepness or default.Steepness,
-		TimeModifier = newSettings.TimeModifier or default.TimeModifier,
-		MaxDistance = newSettings.MaxDistance or default.MaxDistance,
-	}
-	return new
+	new = new or default
+
+	local settings = default
+
+	if new.WaveLength then
+		if typeof(new.WaveLength) == "number" then
+			settings.WaveLength = new.WaveLength
+		else
+			warn("WaveLength is not a number! Using default value.")
+		end
+	else
+		warn("WaveLength is nil! Using default value.")
+	end
+
+	if new.Gravity then
+		if typeof(new.Gravity) == "number" then
+			settings.Gravity = new.Gravity
+		else
+			warn("Gravity is not a number! Using default value.")
+		end
+	else
+		warn("Gravity is nil! Using default value.")
+	end
+
+	if new.Direction then
+		if typeof(new.Direction) == "vector2" then
+			settings.Direction = new.Direction
+		else
+			warn("Direction is not a Vector2! Using default value.")
+		end
+	else
+		warn("Direction is nil! Using default value.")
+	end
+
+	if new.PushPoint then
+		if typeof(new.PushPoint) == "instance" then
+			settings.PushPoint = new.PushPoint
+		else
+			error("PushPoint is not an Instance!")
+		end
+	else
+		warn("PushPoint is nil! Using default value.")
+	end
+
+	if new.Steepness then
+		if typeof(new.Steepness) == "number" then
+			settings.Steepness = new.Steepness
+		else
+			error("Steepness is not a number!")
+		end
+	else
+		warn("Steepness is nil! Using default value.")
+	end
+
+	if new.TimeModifier then
+		if typeof(new.TimeModifier) == "number" then
+			settings.TimeModifier = new.TimeModifier
+		else
+			error("TimeModifier is not a number!")
+		end
+	else
+		warn("TimeModifier is nil! Using default value.")
+	end
+
+	if new.MaxDistance then
+		if typeof(new.MaxDistance) == "number" then
+			settings.MaxDistance = new.MaxDistance
+		else
+			error("MaxDistance is not a number!")
+		end
+	else
+		warn("MaxDistance is nil! Using default value.")
+	end
+	return settings
 end
 
-function Wave.new(instance: instance, waveSettings: table | nil, bones: table | nil)
+function Wave.new(instance: Instance, waveSettings: table | nil, bones: table | nil)
 	-- Check types
-	if typeof(instance) ~= "instance" then
+	if typeof(instance) ~= "Instance" then
 		error("Instance argument must be a valid instance!")
 	end
 	if typeof(waveSettings) ~= "table" then
@@ -81,7 +144,7 @@ function Wave.new(instance: instance, waveSettings: table | nil, bones: table | 
 	}, Wave)
 end
 
--- Update every bone's position
+-- Update every bone's transformation
 function Wave:Update()
 	for _, v in pairs(self._bones) do
 		local WorldPos = v.WorldPosition
