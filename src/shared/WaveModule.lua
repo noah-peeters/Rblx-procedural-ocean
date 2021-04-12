@@ -1,19 +1,20 @@
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
 local Wave = {}
 Wave.__index = Wave
 
-local Player = game:GetService("Players").LocalPlayer
+local LocalPlayer = Players.LocalPlayer
 
 -- Default wave settings
 local default = {
-	WaveLength = 85,
-	Gravity = 1.5,
+	WaveLength = 80,
+	Gravity = 1.8,
 	Direction = Vector2.new(0, 0),
 	FollowPoint = nil,
-	Steepness = 1,
-	TimeModifier = 4,
-	MaxDistance = 1500,
+	Steepness = 0.15,
+	SpeedModifier = 3.5, -- Lower number is faster waves
+	MaxDistance = 1000,
 }
 
 -- Function for calculating wave displacement using Gerstner waves
@@ -89,14 +90,14 @@ local function CreateSettings(new: table)
 		warn("Steepness is nil! Using default value.")
 	end
 
-	if new.TimeModifier then
-		if typeof(new.TimeModifier) == "number" then
-			settings.TimeModifier = new.TimeModifier
+	if new.SpeedModifier then
+		if typeof(new.SpeedModifier) == "number" then
+			settings.SpeedModifier = new.SpeedModifier
 		else
-			error("TimeModifier is not a number!")
+			error("SpeedModifier is not a number!")
 		end
 	else
-		warn("TimeModifier is nil! Using default value.")
+		warn("SpeedModifier is nil! Using default value.")
 	end
 
 	if new.MaxDistance then
@@ -111,13 +112,11 @@ local function CreateSettings(new: table)
 	return settings
 end
 
+-- Create a new Wave
 function Wave.new(instance: Instance, waveSettings: table | nil, bones: table | nil)
 	-- Check types
 	if typeof(instance) ~= "Instance" then
 		error("Instance argument must be a valid instance!")
-	end
-	if typeof(waveSettings) ~= "table" then
-		error("WaveSettings argument must be a table!")
 	end
 
 	if bones == nil then
@@ -142,6 +141,20 @@ function Wave.new(instance: Instance, waveSettings: table | nil, bones: table | 
 		_noise = {},
 		_settings = CreateSettings(waveSettings),
 	}, Wave)
+end
+
+-- Get the height of the wave at a xz position (Vector2)
+function Wave:GetYPosition(xz)
+	if self._settings then
+		return Gerstner(
+			Vector3.new(xz.X, 0, xz.Y),
+			self._settings.WaveLength,
+			self._settings.Direction,
+			self._settings.Steepness,
+			self._settings.Gravity,
+			self._time
+		).Y
+	end
 end
 
 -- Update every bone's transformation
@@ -175,7 +188,7 @@ function Wave:Update()
 			local PushPoint = Settings.PushPoint
 			if PushPoint then
 				local PartPos = nil
-		
+
 				if PushPoint:IsA("Attachment") then
 					PartPos = PushPoint.WorldPosition
 				elseif PushPoint:IsA("BasePart") then
@@ -184,7 +197,7 @@ function Wave:Update()
 					error("Invalid class for FollowPart, must be a BasePart or an Attachment")
 					return
 				end
-		
+
 				Direction = (PartPos - WorldPos).Unit
 				Direction = Vector2.new(Direction.X, Direction.Z)
 			end
@@ -220,13 +233,14 @@ function Wave:ConnectRenderStepped()
 		if not game:IsLoaded() then
 			return
 		end
-		local Character = Player.Character
+		local Character = LocalPlayer.Character
 		local Settings = self._settings
+		-- Check if bone is close enough
 		if
 			not Character
 			or (Character.PrimaryPart.Position - self._instance.Position).Magnitude < Settings.MaxDistance
 		then
-			local Time = (DateTime.now().UnixTimestampMillis / 1000) / Settings.TimeModifier
+			local Time = (DateTime.now().UnixTimestampMillis / 1000) / Settings.SpeedModifier
 			self._time = Time
 			self:Update()
 		else
