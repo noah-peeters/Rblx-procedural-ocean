@@ -15,77 +15,8 @@ local default = {
 local Wave = {}
 Wave.__index = Wave
 
--- Helper function for creating settings table (handles warning and error messages)
-local function CreateSettings(new: table)
-	-- Use given settings or use default settings
-	new = new or default
-
-	local settings = default
-
-	if new.WaveLength then
-		if typeof(new.WaveLength) == "number" then
-			settings.WaveLength = new.WaveLength
-		else
-			warn("WaveLength is not a number! Using default value.")
-		end
-	else
-		warn("WaveLength is nil! Using default value.")
-	end
-
-	if new.Gravity then
-		if typeof(new.Gravity) == "number" then
-			settings.Gravity = new.Gravity
-		else
-			warn("Gravity is not a number! Using default value.")
-		end
-	else
-		warn("Gravity is nil! Using default value.")
-	end
-
-	if new.Direction then
-		if typeof(new.Direction) == "vector2" then
-			settings.Direction = new.Direction
-		else
-			warn("Direction is not a Vector2! Using default value.")
-		end
-	else
-		warn("Direction is nil! Using default value.")
-	end
-
-	if new.PushPoint then
-		if typeof(new.PushPoint) == "instance" then
-			settings.PushPoint = new.PushPoint
-		else
-			error("PushPoint is not an Instance!")
-		end
-	else
-		warn("PushPoint is nil! Using default value.")
-	end
-
-	if new.Steepness then
-		if typeof(new.Steepness) == "number" then
-			settings.Steepness = new.Steepness
-		else
-			error("Steepness is not a number!")
-		end
-	else
-		warn("Steepness is nil! Using default value.")
-	end
-
-	if new.MaxDistance then
-		if typeof(new.MaxDistance) == "number" then
-			settings.MaxDistance = new.MaxDistance
-		else
-			error("MaxDistance is not a number!")
-		end
-	else
-		warn("MaxDistance is nil! Using default value.")
-	end
-	return settings
-end
-
 -- Create a new Wave
-function Wave.new(instance: Instance, waveSettings: table | nil, bones: table | nil)
+function Wave.new(instance: Instance, settings: table | nil, bones: table | nil)
 	-- Check types
 	if typeof(instance) ~= "Instance" then
 		error("Instance argument must be a valid instance!")
@@ -105,22 +36,40 @@ function Wave.new(instance: Instance, waveSettings: table | nil, bones: table | 
 		error("No bones have been found inside the chosen model!")
 	end
 
-	return setmetatable({
-		_instance = instance,
-		_bones = bones,
-		_connections = {},
-		_settings = CreateSettings(waveSettings),
-	}, Wave)
+	-- Check if valid settings and sort general settings from settings per wave
+	local waveSettings = {}
+	local generalSettings = {}
+	for i, v in pairs(settings) do
+		if typeof(v) == "table" then
+			-- Insert in wave settings table
+			waveSettings[i] = v
+		else
+			-- Insert in general settings table
+			generalSettings[i] = v
+		end
+	end
+
+	if #waveSettings >= 1 then
+		return setmetatable({
+			_instance = instance,
+			_bones = bones,
+			_connections = {},
+			_generalSettings = generalSettings,
+			_waves = waveSettings,
+		}, Wave)
+	else
+		error("No Wave settings found! Make sure to follow the right format.")
+	end
 end
 
 function Wave:GerstnerWave(xzPos)
-	local k = (2 * math.pi) / self._settings.WaveLength
-	local speed = math.sqrt(self._settings.Gravity / k)
-	local dir = self._settings.Direction.Unit
+	local k = (2 * math.pi) / self._generalSettings.WaveLength
+	local speed = math.sqrt(self._generalSettings.Gravity / k)
+	local dir = self._generalSettings.Direction.Unit
 	local f = k * (dir:Dot(xzPos) - speed * os.clock())
 
 	-- Calculate displacement (direction)
-	local amplitude = self._settings.Steepness / k
+	local amplitude = self._generalSettings.Steepness / k
 	local xPos = dir.X * (amplitude * math.cos(f))
 	local yPos = amplitude * math.sin(f) -- Y-Position is not affected by direction of wave
 	local zPos = dir.Y * (amplitude * math.cos(f))
@@ -134,7 +83,7 @@ function Wave:Update()
 		local WorldPos = v.WorldPosition
 
 		-- Check if PushPoint --> calculate position
-		local PushPoint = self._settings.PushPoint
+		local PushPoint = self._generalSettings.PushPoint
 		if PushPoint then
 			local PartPos = nil
 
@@ -147,8 +96,9 @@ function Wave:Update()
 				return
 			end
 
-			self._settings.Direction = (PartPos - WorldPos).Unit
-			self._settings.Direction = Vector2.new(self._settings.Direction.X, self._settings.Direction.Z)
+			self._generalSettings.Direction = (PartPos - WorldPos).Unit
+			self._generalSettings.Direction =
+				Vector2.new(self._generalSettings.Direction.X, self._generalSettings.Direction.Z)
 		end
 		-- If not PushPoint, then Direction is given inside of Settings (Vector2)
 
@@ -163,10 +113,6 @@ function Wave:ResetBones()
 	end
 end
 
-function Wave:UpdateSettings(waveSettings)
-	self._settings = CreateSettings(waveSettings)
-end
-
 -- Connect function to RenderStepped
 function Wave:ConnectRenderStepped()
 	local Connection = RunService.RenderStepped:Connect(function()
@@ -174,7 +120,7 @@ function Wave:ConnectRenderStepped()
 			return
 		end
 		local Character = LocalPlayer.Character
-		local Settings = self._settings
+		local Settings = self._generalSettings
 		-- Check if bone is close enough
 		if
 			not Character
@@ -211,7 +157,7 @@ function Wave:Destroy()
 	end
 	-- Cleanup variables
 	self._bones = {}
-	self._settings = {}
+	self._generalSettings = {}
 	self = nil
 end
 
