@@ -1,16 +1,14 @@
 local Wave = require(game:GetService("ReplicatedStorage"):WaitForChild("Common"):WaitForChild("WaveModule"))
 
 local plane = workspace:WaitForChild("Ocean"):WaitForChild("Plane")
-local part = workspace:WaitForChild("FloatingPart")
 
-local Settings = {
-	WaveLength = 300,
-	Direction = Vector2.new(0, 0),
-	Steepness = 0.05,
-	SpeedModifier = 8,
-	MaxDistance = 1000,
-}
-
-local TestWave = Wave.new(plane, {})
-
-TestWave:ConnectRenderStepped()
+-- local wave1 = Wave.new(plane, {
+-- 	WaveLength = 200,
+-- 	Gravity = 9.81,
+-- 	Steepness = 0.25,
+-- 	Direction = Vector2.new(-50, -50),
+-- 	FollowPoint = nil,
+-- 	MaxDistance = 1000,
+-- })
+local wave1 = Wave.new(plane)
+wave1:ConnectRenderStepped()

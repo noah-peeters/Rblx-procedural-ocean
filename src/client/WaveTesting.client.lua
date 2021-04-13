@@ -68,7 +68,7 @@ RunService.Heartbeat:Connect(function(dt)
     -- Update floating part position
 	local height1 = GerstnerHeight(pos, 200, 0.25, Vector2.new(-50, -50))
 	local height2 = GerstnerHeight(pos, 50, 0.4, Vector2.new(25, -25))
-	local height3 = GerstnerHeight(pos, 5, 1, Vector2.new(-25, -15))
+	local height3 = GerstnerHeight(pos, 8, 1, Vector2.new(-25, -15))
 
     local displacement = Vector3.new(origPartPos.X, height1 + height2 + height3, origPartPos.Z)
 

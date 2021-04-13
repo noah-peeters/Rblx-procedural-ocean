@@ -1,20 +1,19 @@
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 
-local Wave = {}
-Wave.__index = Wave
-
 local LocalPlayer = Players.LocalPlayer
-
 -- Default wave settings
 local default = {
-	WaveLength = 80,
-	Gravity = 1.8,
-	Steepness = 0.15,
-	Direction = Vector2.new(0, 0),
+	WaveLength = 100,
+	Gravity = 9.81,
+	Steepness = 0.4,
+	Direction = Vector2.new(1, 0),
 	FollowPoint = nil,
 	MaxDistance = 1000,
 }
+
+local Wave = {}
+Wave.__index = Wave
 
 -- Helper function for creating settings table (handles warning and error messages)
 local function CreateSettings(new: table)
@@ -109,9 +108,7 @@ function Wave.new(instance: Instance, waveSettings: table | nil, bones: table | 
 	return setmetatable({
 		_instance = instance,
 		_bones = bones,
-		_time = 0,
 		_connections = {},
-		_noise = {},
 		_settings = CreateSettings(waveSettings),
 	}, Wave)
 end
@@ -136,45 +133,24 @@ function Wave:Update()
 	for _, v in pairs(self._bones) do
 		local WorldPos = v.WorldPosition
 
-		-- Get wave direction (Perlin Noise or Vector2)
-		if self._settings.Direction == Vector2.new() then
-			-- Use Perlin Noise to calculate wave direction (randomly)
-			local Noise = self._noise[v]
-			local NoiseX = Noise and self._noise[v].X
-			local NoiseZ = Noise and self._noise[v].Z
-			local NoiseModifier = 1 -- If you want more of a consistent direction, change this number to something bigger
+		-- Check if PushPoint --> calculate position
+		local PushPoint = self._settings.PushPoint
+		if PushPoint then
+			local PartPos = nil
 
-			if not Noise then
-				self._noise[v] = {}
-				-- Uses perlin noise to generate smooth transitions between random directions in the waves
-				NoiseX = math.noise(WorldPos.X / NoiseModifier, WorldPos.Z / NoiseModifier, 1)
-				NoiseZ = math.noise(WorldPos.X / NoiseModifier, WorldPos.Z / NoiseModifier, 0)
-
-				self._noise[v].X = NoiseX
-				self._noise[v].Z = NoiseZ
+			if PushPoint:IsA("Attachment") then
+				PartPos = PushPoint.WorldPosition
+			elseif PushPoint:IsA("BasePart") then
+				PartPos = PushPoint.Position
+			else
+				error("Invalid class for FollowPart, must be a BasePart or an Attachment")
+				return
 			end
 
-			self._settings.Direction = Vector2.new(NoiseX, NoiseZ)
-		else
-			-- Check if PushPoint --> calculate position
-			local PushPoint = self._settings.PushPoint
-			if PushPoint then
-				local PartPos = nil
-
-				if PushPoint:IsA("Attachment") then
-					PartPos = PushPoint.WorldPosition
-				elseif PushPoint:IsA("BasePart") then
-					PartPos = PushPoint.Position
-				else
-					error("Invalid class for FollowPart, must be a BasePart or an Attachment")
-					return
-				end
-
-				self._settings.Direction = (PartPos - WorldPos).Unit
-				self._settings.Direction = Vector2.new(self._settings.Direction.X, self._settings.Direction.Z)
-			end
-			-- If not PushPoint, then Direction is given inside of Settings (Vector2)
+			self._settings.Direction = (PartPos - WorldPos).Unit
+			self._settings.Direction = Vector2.new(self._settings.Direction.X, self._settings.Direction.Z)
 		end
+		-- If not PushPoint, then Direction is given inside of Settings (Vector2)
 
 		v.Transform = CFrame.new(self:GerstnerWave(Vector2.new(WorldPos.X, WorldPos.Z)))
 	end
