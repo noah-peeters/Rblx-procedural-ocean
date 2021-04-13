@@ -14,11 +14,3 @@ local Settings = {
 local TestWave = Wave.new(plane, {})
 
 TestWave:ConnectRenderStepped()
-
-while wait(0.5) do
-    local height = TestWave:GetYPosition(Vector2.new(part.Position.X, part.Position.Z))
-    if height then
-        print(height)
-        --part.Position = Vector3.new(part.Position.X, height, part.Position.Z)
-    end
-end

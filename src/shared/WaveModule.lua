@@ -10,28 +10,11 @@ local LocalPlayer = Players.LocalPlayer
 local default = {
 	WaveLength = 80,
 	Gravity = 1.8,
+	Steepness = 0.15,
 	Direction = Vector2.new(0, 0),
 	FollowPoint = nil,
-	Steepness = 0.15,
-	SpeedModifier = 3.5, -- Lower number is faster waves
 	MaxDistance = 1000,
 }
-
--- Function for calculating wave displacement using Gerstner waves
-local function Gerstner(Position: Vector3, Wavelength: number, Direction: Vector2, Steepness: number, Gravity: number, Time: number)
-	local k = (2 * math.pi) / Wavelength
-	local a = Steepness / k
-	local d = Direction.Unit
-	local c = math.sqrt(Gravity / k)
-	local f = k * d:Dot(Vector2.new(Position.X, Position.Z)) - c * Time
-	local cosF = math.cos(f)
-
-	--Displacement Vectors
-	local dX = (d.X * (a * cosF))
-	local dY = a * math.sin(f)
-	local dZ = (d.Y * (a * cosF))
-	return Vector3.new(dX, dY, dZ)
-end
 
 -- Helper function for creating settings table (handles warning and error messages)
 local function CreateSettings(new: table)
@@ -90,16 +73,6 @@ local function CreateSettings(new: table)
 		warn("Steepness is nil! Using default value.")
 	end
 
-	if new.SpeedModifier then
-		if typeof(new.SpeedModifier) == "number" then
-			settings.SpeedModifier = new.SpeedModifier
-		else
-			error("SpeedModifier is not a number!")
-		end
-	else
-		warn("SpeedModifier is nil! Using default value.")
-	end
-
 	if new.MaxDistance then
 		if typeof(new.MaxDistance) == "number" then
 			settings.MaxDistance = new.MaxDistance
@@ -143,29 +116,28 @@ function Wave.new(instance: Instance, waveSettings: table | nil, bones: table | 
 	}, Wave)
 end
 
--- Get the height of the wave at a xz position (Vector2)
-function Wave:GetYPosition(xz)
-	if self._settings then
-		return Gerstner(
-			Vector3.new(xz.X, 0, xz.Y),
-			self._settings.WaveLength,
-			self._settings.Direction,
-			self._settings.Steepness,
-			self._settings.Gravity,
-			self._time
-		).Y
-	end
+function Wave:GerstnerWave(xzPos)
+	local k = (2 * math.pi) / self._settings.WaveLength
+	local speed = math.sqrt(self._settings.Gravity / k)
+	local dir = self._settings.Direction.Unit
+	local f = k * (dir:Dot(xzPos) - speed * os.clock())
+
+	-- Calculate displacement (direction)
+	local amplitude = self._settings.Steepness / k
+	local xPos = dir.X * (amplitude * math.cos(f))
+	local yPos = amplitude * math.sin(f) -- Y-Position is not affected by direction of wave
+	local zPos = dir.Y * (amplitude * math.cos(f))
+
+	return Vector3.new(xPos, yPos, zPos)
 end
 
 -- Update every bone's transformation
 function Wave:Update()
 	for _, v in pairs(self._bones) do
 		local WorldPos = v.WorldPosition
-		local Settings = self._settings
-		local Direction = Settings.Direction
 
 		-- Get wave direction (Perlin Noise or Vector2)
-		if Direction == Vector2.new() then
+		if self._settings.Direction == Vector2.new() then
 			-- Use Perlin Noise to calculate wave direction (randomly)
 			local Noise = self._noise[v]
 			local NoiseX = Noise and self._noise[v].X
@@ -182,10 +154,10 @@ function Wave:Update()
 				self._noise[v].Z = NoiseZ
 			end
 
-			Direction = Vector2.new(NoiseX, NoiseZ)
+			self._settings.Direction = Vector2.new(NoiseX, NoiseZ)
 		else
 			-- Check if PushPoint --> calculate position
-			local PushPoint = Settings.PushPoint
+			local PushPoint = self._settings.PushPoint
 			if PushPoint then
 				local PartPos = nil
 
@@ -198,21 +170,13 @@ function Wave:Update()
 					return
 				end
 
-				Direction = (PartPos - WorldPos).Unit
-				Direction = Vector2.new(Direction.X, Direction.Z)
+				self._settings.Direction = (PartPos - WorldPos).Unit
+				self._settings.Direction = Vector2.new(self._settings.Direction.X, self._settings.Direction.Z)
 			end
 			-- If not PushPoint, then Direction is given inside of Settings (Vector2)
 		end
 
-		v.Transform =
-			CFrame.new(Gerstner(
-				WorldPos,
-				Settings.WaveLength,
-				Direction,
-				Settings.Steepness,
-				Settings.Gravity,
-				self._time
-			))
+		v.Transform = CFrame.new(self:GerstnerWave(Vector2.new(WorldPos.X, WorldPos.Z)))
 	end
 end
 
@@ -240,8 +204,6 @@ function Wave:ConnectRenderStepped()
 			not Character
 			or (Character.PrimaryPart.Position - self._instance.Position).Magnitude < Settings.MaxDistance
 		then
-			local Time = (DateTime.now().UnixTimestampMillis / 1000) / Settings.SpeedModifier
-			self._time = Time
 			self:Update()
 		else
 			self:ResetBones()
