@@ -38,38 +38,46 @@ function Wave.new(instance: Instance, settings: table | nil, bones: table | nil)
 
 	-- Check if valid settings and sort general settings from settings per wave
 	local waveSettings = {}
+	local waveCount = 0
 	local generalSettings = {}
 	for i, v in pairs(settings) do
 		if typeof(v) == "table" then
 			-- Insert in wave settings table
 			waveSettings[i] = v
+			waveCount += 1
 		else
 			-- Insert in general settings table
 			generalSettings[i] = v
 		end
 	end
 
-	if #waveSettings >= 1 then
+	if waveCount >= 1 then
 		return setmetatable({
 			_instance = instance,
 			_bones = bones,
 			_connections = {},
 			_generalSettings = generalSettings,
-			_waves = waveSettings,
+			_waveSettings = waveSettings,
 		}, Wave)
 	else
 		error("No Wave settings found! Make sure to follow the right format.")
 	end
 end
 
-function Wave:GerstnerWave(xzPos)
-	local k = (2 * math.pi) / self._generalSettings.WaveLength
-	local speed = math.sqrt(self._generalSettings.Gravity / k)
-	local dir = self._generalSettings.Direction.Unit
+function Wave:GerstnerWave(xzPos, settings)
+	-- Get settings: from this wave, from generalSettings or from default
+	local waveLength = settings.WaveLength or self._generalSettings.WaveLength or default.WaveLength
+	local gravity = settings.Gravity or self._generalSettings.Gravity or default.Gravity
+	local direction = settings.Direction or self._generalSettings.Direction or default.Direction
+	local steepness = settings.Steepness or self._generalSettings.Steepness or default.Steepness
+	
+	local k = (2 * math.pi) / waveLength
+	local speed = math.sqrt(gravity / k)
+	local dir = direction.Unit
 	local f = k * (dir:Dot(xzPos) - speed * os.clock())
 
 	-- Calculate displacement (direction)
-	local amplitude = self._generalSettings.Steepness / k
+	local amplitude = steepness / k
 	local xPos = dir.X * (amplitude * math.cos(f))
 	local yPos = amplitude * math.sin(f) -- Y-Position is not affected by direction of wave
 	local zPos = dir.Y * (amplitude * math.cos(f))
@@ -79,30 +87,34 @@ end
 
 -- Update every bone's transformation
 function Wave:Update()
-	for _, v in pairs(self._bones) do
-		local WorldPos = v.WorldPosition
+	for _, bone in pairs(self._bones) do
+		-- Calculate bone displacement for every wave
+		local finalDisplacement = Vector3.new()
+		for _, waveSetting in pairs(self._waveSettings) do
+			local WorldPos = bone.WorldPosition
+			-- Check if PushPoint --> calculate position
+			local PushPoint = self._generalSettings.PushPoint
+			if PushPoint then
+				local PartPos = nil
 
-		-- Check if PushPoint --> calculate position
-		local PushPoint = self._generalSettings.PushPoint
-		if PushPoint then
-			local PartPos = nil
+				if PushPoint:IsA("Attachment") then
+					PartPos = PushPoint.WorldPosition
+				elseif PushPoint:IsA("BasePart") then
+					PartPos = PushPoint.Position
+				else
+					error("Invalid class for FollowPart, must be a BasePart or an Attachment")
+					return
+				end
 
-			if PushPoint:IsA("Attachment") then
-				PartPos = PushPoint.WorldPosition
-			elseif PushPoint:IsA("BasePart") then
-				PartPos = PushPoint.Position
-			else
-				error("Invalid class for FollowPart, must be a BasePart or an Attachment")
-				return
+				self._generalSettings.Direction = (PartPos - WorldPos).Unit
+				self._generalSettings.Direction =
+					Vector2.new(self._generalSettings.Direction.X, self._generalSettings.Direction.Z)
 			end
-
-			self._generalSettings.Direction = (PartPos - WorldPos).Unit
-			self._generalSettings.Direction =
-				Vector2.new(self._generalSettings.Direction.X, self._generalSettings.Direction.Z)
+			-- If not PushPoint, then Direction is given inside of Settings (Vector2)
+			
+			finalDisplacement += self:GerstnerWave(Vector2.new(WorldPos.X, WorldPos.Z), waveSetting)
 		end
-		-- If not PushPoint, then Direction is given inside of Settings (Vector2)
-
-		v.Transform = CFrame.new(self:GerstnerWave(Vector2.new(WorldPos.X, WorldPos.Z)))
+		bone.Transform = CFrame.new(finalDisplacement)
 	end
 end
 

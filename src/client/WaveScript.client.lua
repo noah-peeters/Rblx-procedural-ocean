@@ -14,20 +14,15 @@ local test = {
     Gravity = 9.81,
     MaxDistance = 1000,
     Wave1 = {
-        WaveLength = 200,
+        WaveLength = 250,
         Steepness = 0.25,
-        Direction = Vector2.new(-50, -50)
+        Direction = Vector2.new(-1, -1)
     },
     Wave2 = {
         WaveLength = 50,
-        Steepness = 0.4,
-        Direction = Vector2.new(25, -25)
+        Steepness = 0.3,
+        Direction = Vector2.new(-50, -10)
     },
-    Wave3 = {
-        WaveLength = 8,
-        Steepness = 1,
-        Direction = Vector2.new(-25, -15)
-    }
 }
-local wave1 = Wave.new(plane)
+local wave1 = Wave.new(plane, test)
 wave1:ConnectRenderStepped()
