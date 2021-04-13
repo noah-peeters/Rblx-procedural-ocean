@@ -133,7 +133,13 @@ function Wave:AddPlayerFloat(player)
 	local rootPart = char:WaitForChild("HumanoidRootPart")
 	local humanoid = char:WaitForChild("Humanoid")
 
-	local bodyVelocity
+	-- Setup BodyForces
+	local dirVelocity
+	local floatPosition = Instance.new("BodyPosition")
+	floatPosition.D = 1250
+	floatPosition.MaxForce = Vector3.new(0, 0, 0)
+	floatPosition.P = 10000
+	floatPosition.Parent = rootPart
 
 	-- Rootpart position at wave height
 	local rootPartWavePos = Vector3.new(rootPart.Position.X, self._instance.Position.Y, rootPart.Position.Z)
@@ -142,7 +148,7 @@ function Wave:AddPlayerFloat(player)
 	local connection = RunService.Heartbeat:Connect(function()
 		if rootPart then
 			local waveDisplacement = self:GerstnerWave(xzPos)
-			--local absoluteDisplacement = rootPartWavePos + waveDisplacement
+			local absoluteDisplacement = rootPartWavePos + waveDisplacement
 
 			-- Check if character is underneath wave
 			if rootPart.Position.Y <= waveDisplacement.Y + self._instance.Position.Y then
@@ -150,18 +156,24 @@ function Wave:AddPlayerFloat(player)
 					humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
 					humanoid:ChangeState(Enum.HumanoidStateType.Swimming, true)
 				end
-				if not bodyVelocity then
-					bodyVelocity = Instance.new("BodyVelocity")
-					bodyVelocity.Parent = rootPart
+				-- Entered water
+				if not dirVelocity then
+					-- Direction BodyVelocity
+					dirVelocity = Instance.new("BodyVelocity")
+					dirVelocity.Parent = rootPart
+					-- Float to surface BodyPosition
+					floatPosition.MaxForce = Vector3.new(0, rootPart.AssemblyMass * workspace.Gravity, 0)
 				end
-				bodyVelocity.Velocity = humanoid.MoveDirection * humanoid.WalkSpeed
+				dirVelocity.Velocity = humanoid.MoveDirection * humanoid.WalkSpeed
+				floatPosition.Position = absoluteDisplacement
 			elseif math.abs(rootPart.Position.Y - waveDisplacement.Y + self._instance.Position.Y) >= 5 then
 				-- Disable float if distance is great enough
 				print("Disable")
-				if bodyVelocity then
-					bodyVelocity:Destroy()
-					bodyVelocity = nil
+				if dirVelocity then
+					dirVelocity:Destroy()
+					dirVelocity = nil
 					humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+					floatPosition.MaxForce = Vector3.new(0, 0, 0)
 				end
 			end
 		end
