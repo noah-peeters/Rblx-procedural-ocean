@@ -1,7 +1,11 @@
 local Wave = require(game:GetService("ReplicatedStorage"):WaitForChild("Common"):WaitForChild("WaveModule"))
 
 local plane = workspace:WaitForChild("Ocean"):WaitForChild("Plane")
-local floatPart = workspace:WaitForChild("FloatingPart")
+local floatPart = Instance.new("Part")
+floatPart.Size = Vector3.new(5, 3, 5)
+floatPart.Material = Enum.Material.WoodPlanks
+floatPart.Color = Color3.fromRGB(65, 36, 17)
+floatPart.Parent = workspace
 
 local test = {
     Gravity = 9.81,
