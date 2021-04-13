@@ -92,6 +92,7 @@ function Wave:GerstnerWave(xzPos)
 	return finalDisplacement
 end
 
+-- Add a connection for a floating part
 function Wave:AddFloatingPart(part)
 	if typeof(part) ~= "Instance" then
 		error("Part must be a valid Instance.")
@@ -100,7 +101,7 @@ function Wave:AddFloatingPart(part)
 		error("Wave object not found!")
 	end
 	-- Set part's height to wave
-	local waveHeightPartPos = Vector3.new(part.Position.X, self._instance.Position.Y, part.Position.Z)	-- Part's position at height of wave
+	local waveHeightPartPos = Vector3.new(part.Position.X, self._instance.Position.Y, part.Position.Z) -- Part's position at height of wave
 	local xzPos = Vector2.new(part.Position.X, part.Position.Z)
 
 	-- Setup BodyPosition
@@ -118,9 +119,52 @@ function Wave:AddFloatingPart(part)
 
 	part.Anchored = false
 
-	-- Update part position 
+	-- Update part position
 	local connection = RunService.Heartbeat:Connect(function()
 		bodyPosition.Position = waveHeightPartPos + self:GerstnerWave(xzPos)
+	end)
+	table.insert(self._connections, connection)
+end
+
+function Wave:AddPlayerFloat(player)
+	local char = player.Character or player.CharacterAdded:Wait()
+	--player.CharacterAppearanceLoaded:Wait()
+	print("done waiting")
+	local rootPart = char:WaitForChild("HumanoidRootPart")
+	local humanoid = char:WaitForChild("Humanoid")
+
+	local bodyVelocity
+
+	-- Rootpart position at wave height
+	local rootPartWavePos = Vector3.new(rootPart.Position.X, self._instance.Position.Y, rootPart.Position.Z)
+	local xzPos = Vector2.new(rootPart.Position.X, rootPart.Position.Z)
+
+	local connection = RunService.Heartbeat:Connect(function()
+		if rootPart then
+			local waveDisplacement = self:GerstnerWave(xzPos)
+			--local absoluteDisplacement = rootPartWavePos + waveDisplacement
+
+			-- Check if character is underneath wave
+			if rootPart.Position.Y <= waveDisplacement.Y + self._instance.Position.Y then
+				if humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
+					humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+					humanoid:ChangeState(Enum.HumanoidStateType.Swimming, true)
+				end
+				if not bodyVelocity then
+					bodyVelocity = Instance.new("BodyVelocity")
+					bodyVelocity.Parent = rootPart
+				end
+				bodyVelocity.Velocity = humanoid.MoveDirection * humanoid.WalkSpeed
+			elseif math.abs(rootPart.Position.Y - waveDisplacement.Y + self._instance.Position.Y) >= 5 then
+				-- Disable float if distance is great enough
+				print("Disable")
+				if bodyVelocity then
+					bodyVelocity:Destroy()
+					bodyVelocity = nil
+					humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+				end
+			end
+		end
 	end)
 	table.insert(self._connections, connection)
 end

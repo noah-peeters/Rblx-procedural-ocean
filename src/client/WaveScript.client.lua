@@ -1,6 +1,10 @@
+local Players = game:GetService("Players")
+
 local Wave = require(game:GetService("ReplicatedStorage"):WaitForChild("Common"):WaitForChild("WaveModule"))
 
 local plane = workspace:WaitForChild("Ocean"):WaitForChild("Plane")
+local LocalPlayer = Players.LocalPlayer
+
 local floatPart = Instance.new("Part")
 floatPart.Size = Vector3.new(5, 3, 5)
 floatPart.Material = Enum.Material.WoodPlanks
@@ -24,3 +28,4 @@ local test = {
 local wave = Wave.new(plane, test)
 wave:ConnectRenderStepped()
 wave:AddFloatingPart(floatPart)
+wave:AddPlayerFloat(LocalPlayer)
