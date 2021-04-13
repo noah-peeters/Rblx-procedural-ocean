@@ -1,4 +1,5 @@
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 
 local LocalPlayer = Players.LocalPlayer
@@ -64,57 +65,103 @@ function Wave.new(instance: Instance, settings: table | nil, bones: table | nil)
 	end
 end
 
-function Wave:GerstnerWave(xzPos, settings)
-	-- Get settings: from this wave, from generalSettings or from default
-	local waveLength = settings.WaveLength or self._generalSettings.WaveLength or default.WaveLength
-	local gravity = settings.Gravity or self._generalSettings.Gravity or default.Gravity
-	local direction = settings.Direction or self._generalSettings.Direction or default.Direction
-	local steepness = settings.Steepness or self._generalSettings.Steepness or default.Steepness
-	
-	local k = (2 * math.pi) / waveLength
-	local speed = math.sqrt(gravity / k)
-	local dir = direction.Unit
-	local f = k * (dir:Dot(xzPos) - speed * os.clock())
+function Wave:GerstnerWave(xzPos)
+	local finalDisplacement = Vector3.new()
+	-- Calculate bone displacement for every wave
+	for _, waveSetting in pairs(self._waveSettings) do
+		-- Get settings: from this wave, from generalSettings or from default
+		local waveLength = waveSetting.WaveLength or self._generalSettings.WaveLength or default.WaveLength
+		local gravity = waveSetting.Gravity or self._generalSettings.Gravity or default.Gravity
+		local direction = waveSetting.Direction or self._generalSettings.Direction or default.Direction
+		local steepness = waveSetting.Steepness or self._generalSettings.Steepness or default.Steepness
 
-	-- Calculate displacement (direction)
-	local amplitude = steepness / k
-	local xPos = dir.X * (amplitude * math.cos(f))
-	local yPos = amplitude * math.sin(f) -- Y-Position is not affected by direction of wave
-	local zPos = dir.Y * (amplitude * math.cos(f))
+		local k = (2 * math.pi) / waveLength
+		local speed = math.sqrt(gravity / k)
+		local dir = direction.Unit
+		local f = k * (dir:Dot(xzPos) - speed * os.clock())
 
-	return Vector3.new(xPos, yPos, zPos)
+		-- Calculate displacement (direction)
+		local amplitude = steepness / k
+		local xPos = dir.X * (amplitude * math.cos(f))
+		local yPos = amplitude * math.sin(f) -- Y-Position is not affected by direction of wave
+		local zPos = dir.Y * (amplitude * math.cos(f))
+
+		finalDisplacement += Vector3.new(xPos, yPos, zPos) -- Add this wave to final displacement
+	end
+
+	return finalDisplacement
+end
+
+-- Get height of wave at xz-position
+function Wave:GetHeight(xzPos)
+	local finalHeight = 0
+	-- Calculate height offset for every wave
+	for _, waveSetting in pairs(self._waveSettings) do
+		-- Get settings: from this wave, from generalSettings or from default
+		local waveLength = waveSetting.WaveLength or self._generalSettings.WaveLength or default.WaveLength
+		local gravity = waveSetting.Gravity or self._generalSettings.Gravity or default.Gravity
+		local direction = waveSetting.Direction or self._generalSettings.Direction or default.Direction
+		local steepness = waveSetting.Steepness or self._generalSettings.Steepness or default.Steepness
+
+		local k = (2 * math.pi) / waveLength
+		local speed = math.sqrt(gravity / k)
+		local dir = direction.Unit
+		local f = k * (dir:Dot(xzPos) - speed * os.clock())
+
+		-- Calculate height
+		local amplitude = steepness / k
+		local yPos = amplitude * math.sin(f)
+
+		finalHeight += yPos -- Add height
+	end
+
+	return finalHeight
+end
+
+function Wave:AddFloatingPart(part)
+	if typeof(part) ~= "Instance" then
+		error("Part must be a valid Instance.")
+	end
+	if not self._instance then
+		error("Wave object not found!")
+	end
+	-- Set part's height to wave
+	part.Position = Vector3.new(part.Position.X, self._instance.Position.Y, part.Position.Z)
+	local origPartPos = part.Position
+	local xzPos = Vector2.new(part.Position.X, part.Position.Z)
+
+	RunService.Heartbeat:Connect(function()
+		part.Position = Vector3.new(origPartPos.X, origPartPos.Y + self:GetHeight(xzPos), origPartPos.Z)
+		--TweenService:Create(part, TweenInfo.new(dt), { Position = origPartPos + displacement }):Play()
+	end)
 end
 
 -- Update every bone's transformation
 function Wave:Update()
 	for _, bone in pairs(self._bones) do
-		-- Calculate bone displacement for every wave
-		local finalDisplacement = Vector3.new()
-		for _, waveSetting in pairs(self._waveSettings) do
-			local WorldPos = bone.WorldPosition
-			-- Check if PushPoint --> calculate position
-			local PushPoint = self._generalSettings.PushPoint
-			if PushPoint then
-				local PartPos = nil
+		local worldPos = bone.WorldPosition
+		-- Check if PushPoint --> calculate position
+		local PushPoint = self._generalSettings.PushPoint
+		if PushPoint then
+			local PartPos = nil
 
-				if PushPoint:IsA("Attachment") then
-					PartPos = PushPoint.WorldPosition
-				elseif PushPoint:IsA("BasePart") then
-					PartPos = PushPoint.Position
-				else
-					error("Invalid class for FollowPart, must be a BasePart or an Attachment")
-					return
-				end
-
-				self._generalSettings.Direction = (PartPos - WorldPos).Unit
-				self._generalSettings.Direction =
-					Vector2.new(self._generalSettings.Direction.X, self._generalSettings.Direction.Z)
+			if PushPoint:IsA("Attachment") then
+				PartPos = PushPoint.WorldPosition
+			elseif PushPoint:IsA("BasePart") then
+				PartPos = PushPoint.Position
+			else
+				error("Invalid class for FollowPart, must be a BasePart or an Attachment")
+				return
 			end
-			-- If not PushPoint, then Direction is given inside of Settings (Vector2)
-			
-			finalDisplacement += self:GerstnerWave(Vector2.new(WorldPos.X, WorldPos.Z), waveSetting)
+
+			self._generalSettings.Direction = (PartPos - worldPos).Unit
+			self._generalSettings.Direction =
+				Vector2.new(self._generalSettings.Direction.X, self._generalSettings.Direction.Z)
 		end
-		bone.Transform = CFrame.new(finalDisplacement)
+		-- If not PushPoint, then Direction is given inside of Settings (Vector2)
+
+		-- Transform bone's position
+		bone.Transform = CFrame.new(self:GerstnerWave(Vector2.new(worldPos.X, worldPos.Z)))
 	end
 end
 
