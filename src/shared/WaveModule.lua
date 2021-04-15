@@ -76,6 +76,7 @@ function Wave:GerstnerWave(xzPos)
 		local direction = waveSetting.Direction or self._generalSettings.Direction or default.Direction
 		local steepness = waveSetting.Steepness or self._generalSettings.Steepness or default.Steepness
 
+		-- Calculate Wave displacement
 		local k = (2 * math.pi) / waveLength
 		local speed = math.sqrt(gravity / k)
 		local dir = direction.Unit
@@ -94,36 +95,112 @@ end
 
 -- Add a connection for a floating part
 function Wave:AddFloatingPart(part)
+	local positionDragSpeed = 10 -- Speed at which positional drag can change
+	local rotationDragSpeed = 0.5 -- Speed at which rotational drag can change
+	local attachmentForceSpeed = 20 -- Speed at which force per attachment can change
+	local waterDrag = 300
+
 	if typeof(part) ~= "Instance" then
 		error("Part must be a valid Instance.")
 	end
 	if not self._instance then
 		error("Wave object not found!")
 	end
-	-- Set part's height to wave
-	local waveHeightPartPos = Vector3.new(part.Position.X, self._instance.Position.Y, part.Position.Z) -- Part's position at height of wave
-	local xzPos = Vector2.new(part.Position.X, part.Position.Z)
 
-	-- Setup BodyPosition
-	local bodyPosition = Instance.new("BodyPosition")
-	bodyPosition.D = 1000
-	bodyPosition.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	bodyPosition.P = 50000
-	bodyPosition.Parent = part
-	-- Setup BodyGyro
-	local bodyGyro = Instance.new("BodyGyro")
-	bodyGyro.D = 500
-	bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	bodyGyro.P = 3000
-	bodyGyro.Parent = part
+	-- Create attachments (on four corners)
+	local s = part.Size
 
-	part.Anchored = false
+	local corners = {
+		Vector3.new(s.X / 2, 0, s.Z / 2),
+		Vector3.new(s.X / 2, 0, -s.Z / 2),
+		Vector3.new(-s.X / 2, 0, s.Z / 2),
+		Vector3.new(-s.X / 2, 0, -s.Z / 2),
+	}
+	local attachments = {}
+	-- Create attachments and their VectorForces
+	for _, relativePos in pairs(corners) do
+		local attach = Instance.new("Attachment")
+		attach.Position = relativePos
+		attach.Visible = true
+		attach.Parent = part
 
-	-- Update part position
-	local connection = RunService.Heartbeat:Connect(function()
-		bodyPosition.Position = waveHeightPartPos + self:GerstnerWave(xzPos)
+		local force = Instance.new("VectorForce")
+		force.RelativeTo = Enum.ActuatorRelativeTo.World
+		force.Attachment0 = attach
+		force.Force = Vector3.new(0, 0, 0)
+		force.Visible = false
+		force.Enabled = true
+		force.ApplyAtCenterOfMass = false
+		force.Parent = part
+		attachments[attach] = force
+	end
+
+	-- Water drag force(s)
+	local waterDragForce = Instance.new("BodyForce")
+	waterDragForce.Force = Vector3.new(0, 0, 0)
+	waterDragForce.Parent = part
+
+	local waterDragTorque = Instance.new("BodyAngularVelocity")
+	waterDragTorque.AngularVelocity = Vector3.new(0, 0, 0)
+	local max = part.AssemblyMass * 50
+	waterDragTorque.MaxTorque = Vector3.new(max, max, max)
+	waterDragTorque.P = math.huge
+	waterDragTorque.Parent = part
+
+	local gravity = workspace.Gravity / 4 -- Force of gravity per attachment
+	local currentPositionalDrag = Vector3.new(0, 0, 0)
+	local currentRotationalDrag = Vector3.new(0, 0, 0)
+	local currentAttachmentForces = {}
+	for attach, _ in pairs(attachments) do
+		currentAttachmentForces[attach] = Vector3.new(0, 0, 0)
+	end
+
+	RunService.Heartbeat:Connect(function(dt)
+		-- Wave height at part's xz-position
+		local waveHeight = self._instance.Position.Y
+			+ self:GerstnerWave(Vector2.new(part.Position.X, part.Position.Z)).Y
+
+		local depthBeforeSubmerged = 1
+		local displacementAmount = 3
+		local displacementModifier =
+			math.clamp((waveHeight - part.Position.Y) / depthBeforeSubmerged * displacementAmount, 0, 1.25)
+
+		-- Water drag force on part (BodyForce)
+		if math.abs(part.Position.Y - waveHeight) > 5 and part.Position.Y > waveHeight then
+			-- Disable drag (part is above wave)
+			waterDragForce.Force = Vector3.new(0, 0, 0)
+			waterDragTorque.AngularVelocity = Vector3.new(0, 0, 0)
+		else
+			-- Position drag
+			local newPosForce = -part.Velocity * displacementModifier * waterDrag
+			currentPositionalDrag += (newPosForce - currentPositionalDrag) * math.min(dt * positionDragSpeed, 1)
+			-- Rotational drag
+			currentRotationalDrag += (-part.AssemblyAngularVelocity - currentRotationalDrag) * math.min(dt * rotationDragSpeed, 1)
+
+			-- Update forces (slowy/"tween")
+			waterDragForce.Force = currentPositionalDrag
+			waterDragTorque.AngularVelocity = currentRotationalDrag
+		end
+
+		-- Force per attachment
+		for attachment, force in pairs(attachments) do
+			local p = attachment.WorldPosition
+			-- Recalculate wave height at the attachment's position
+			waveHeight = self._instance.Position.Y + self:GerstnerWave(Vector2.new(p.X, p.Z)).Y
+
+			-- Set force of attachment
+			local destPos
+			if p.Y < waveHeight then -- Check if attachment is under wave
+				-- Buoyancy force at this attachment (smooth movement)
+				destPos = Vector3.new(0, gravity * part.AssemblyMass * displacementModifier, 0)
+			else
+				-- Smoothly disable force
+				destPos = Vector3.new(0, 0, 0)
+			end
+			currentAttachmentForces[attachment] += (destPos - currentAttachmentForces[attachment]) * math.min(dt * attachmentForceSpeed, 1)
+			force.Force = currentAttachmentForces[attachment]
+		end
 	end)
-	table.insert(self._connections, connection)
 end
 
 function Wave:AddPlayerFloat(player)
@@ -158,17 +235,29 @@ function Wave:AddPlayerFloat(player)
 				end
 				-- Entered water
 				if not dirVelocity then
-					-- Direction BodyVelocity
+					-- Create direction BodyVelocity
 					dirVelocity = Instance.new("BodyVelocity")
 					dirVelocity.Parent = rootPart
-					-- Float to surface BodyPosition
-					floatPosition.MaxForce = Vector3.new(0, rootPart.AssemblyMass * workspace.Gravity, 0)
+				end
+				-- Only float up if no movement input
+				if humanoid.MoveDirection == Vector3.new(0, 0, 0) then
+					print("Enable float")
+					-- Enable float
+					local force = rootPart.AssemblyMass * workspace.Gravity * 25
+					floatPosition.MaxForce = Vector3.new(force, force, force)
+				else
+					print("Disable float")
+					-- Disable float
+					floatPosition.MaxForce = Vector3.new(0, 0, 0)
 				end
 				dirVelocity.Velocity = humanoid.MoveDirection * humanoid.WalkSpeed
-				floatPosition.Position = absoluteDisplacement
+				floatPosition.Position = Vector3.new(
+					absoluteDisplacement.X + rootPart.Position.X,
+					absoluteDisplacement.Y,
+					absoluteDisplacement.Z + rootPart.Position.Z
+				)
 			elseif math.abs(rootPart.Position.Y - waveDisplacement.Y + self._instance.Position.Y) >= 5 then
 				-- Disable float if distance is great enough
-				print("Disable")
 				if dirVelocity then
 					dirVelocity:Destroy()
 					dirVelocity = nil
@@ -205,24 +294,14 @@ function Wave:Update()
 		end
 		-- If not PushPoint, then Direction is given inside of Settings (Vector2)
 
-		-- Transform bone's position
+		-- Transform bone
 		bone.Transform = CFrame.new(self:GerstnerWave(Vector2.new(worldPos.X, worldPos.Z)))
-	end
-end
-
--- Reset all bone transformations
-function Wave:ResetBones()
-	for _, v in pairs(self._bones) do
-		v.Transform = CFrame.new()
 	end
 end
 
 -- Connect function to RenderStepped
 function Wave:ConnectRenderStepped()
 	local Connection = RunService.RenderStepped:Connect(function()
-		if not game:IsLoaded() then
-			error("Game is not loaded yet.")
-		end
 		local Character = LocalPlayer.Character
 		local Settings = self._generalSettings
 		-- Check if bone is close enough
@@ -232,8 +311,6 @@ function Wave:ConnectRenderStepped()
 			or (Character.PrimaryPart.Position - self._instance.Position).Magnitude < Settings.MaxDistance
 		then
 			self:Update()
-		else
-			self:ResetBones()
 		end
 	end)
 	table.insert(self._connections, Connection)
