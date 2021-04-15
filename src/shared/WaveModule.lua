@@ -95,10 +95,10 @@ end
 
 -- Add a connection for a floating part
 function Wave:AddFloatingPart(part)
-	local positionDragSpeed = 10 -- Speed at which positional drag can change
+	local positionDragSpeed = 25 -- Speed at which positional drag can change
 	local rotationDragSpeed = 0.5 -- Speed at which rotational drag can change
-	local attachmentForceSpeed = 20 -- Speed at which force per attachment can change
-	local waterDrag = 300
+	local attachmentForceSpeed = 15 -- Speed at which force per attachment can change
+	local waterDrag = 1000
 
 	if typeof(part) ~= "Instance" then
 		error("Part must be a valid Instance.")
@@ -142,7 +142,7 @@ function Wave:AddFloatingPart(part)
 
 	local waterDragTorque = Instance.new("BodyAngularVelocity")
 	waterDragTorque.AngularVelocity = Vector3.new(0, 0, 0)
-	local max = part.AssemblyMass * 50
+	local max = part.AssemblyMass * 125
 	waterDragTorque.MaxTorque = Vector3.new(max, max, max)
 	waterDragTorque.P = math.huge
 	waterDragTorque.Parent = part
@@ -175,7 +175,8 @@ function Wave:AddFloatingPart(part)
 			local newPosForce = -part.Velocity * displacementModifier * waterDrag
 			currentPositionalDrag += (newPosForce - currentPositionalDrag) * math.min(dt * positionDragSpeed, 1)
 			-- Rotational drag
-			currentRotationalDrag += (-part.AssemblyAngularVelocity - currentRotationalDrag) * math.min(dt * rotationDragSpeed, 1)
+			local newRotDrag = -part.AssemblyAngularVelocity * displacementModifier * waterDrag
+			currentRotationalDrag += (newRotDrag - currentRotationalDrag) * math.min(dt * rotationDragSpeed, 1)
 
 			-- Update forces (slowy/"tween")
 			waterDragForce.Force = currentPositionalDrag
