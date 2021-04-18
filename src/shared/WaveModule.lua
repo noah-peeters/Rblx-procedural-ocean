@@ -24,7 +24,7 @@ function Wave.new(instance: Instance, settings: table | nil, bones: table | nil)
 	end
 
 	if bones == nil then
-		-- Get bones on our own
+		-- Get bones inside Model
 		bones = {}
 		for _, v in pairs(instance:GetDescendants()) do
 			if v:IsA("Bone") then
@@ -53,10 +53,24 @@ function Wave.new(instance: Instance, settings: table | nil, bones: table | nil)
 	end
 
 	if waveCount >= 1 then
+		-- Setup (flat) sea models around animated sea
+		-- local folder = Instance.new("Folder")
+		-- folder.Name = "SeaParts"
+		-- folder.Parent = workspace
+		-- for i = 1, 8  do
+		-- 	local sea = instance:FindFirstChildWhichIsA("MeshPart")
+		-- 	if sea then
+		-- 		sea = sea:Clone()
+
+		-- 	end
+		-- end
+
+		-- Return "Wave" object
 		return setmetatable({
 			_instance = instance,
 			_bones = bones,
 			_connections = {},
+			_cachedVars = {},
 			_generalSettings = generalSettings,
 			_waveSettings = waveSettings,
 		}, Wave)
@@ -69,36 +83,60 @@ end
 function Wave:GerstnerWave(xzPos)
 	local finalDisplacement = Vector3.new()
 	-- Calculate bone displacement for every wave
-	for _, waveSetting in pairs(self._waveSettings) do
-		-- Get settings: from this wave, from generalSettings or from default
-		local waveLength = waveSetting.WaveLength or self._generalSettings.WaveLength or default.WaveLength
-		local gravity = waveSetting.Gravity or self._generalSettings.Gravity or default.Gravity
-		local direction = waveSetting.Direction or self._generalSettings.Direction or default.Direction
-		local steepness = waveSetting.Steepness or self._generalSettings.Steepness or default.Steepness
+	for waveName, _ in pairs(self._waveSettings) do
+		-- Calculate cachedVars (if they weren't already calculated)
+		if not self._cachedVars[waveName] then
+			self:UpdateCachedVars()
+		end
 
-		-- Calculate Wave displacement
-		local k = (2 * math.pi) / waveLength
-		local speed = math.sqrt(gravity / k)
-		local dir = direction.Unit
-		local f = k * (dir:Dot(xzPos) - speed * os.clock())
+		-- Get cached variables (they don't need to be recalculated every frame)
+		local cached = self._cachedVars[waveName]
+		local k = cached["K"]
+		local speed = cached["WaveSpeed"]
+		local dir = cached["UnitDirection"]
+		local amplitude = cached["Amplitude"]
 
-		-- Calculate displacement (direction)
-		local amplitude = steepness / k
-		local xPos = dir.X * (amplitude * math.cos(f))
-		local yPos = amplitude * math.sin(f) -- Y-Position is not affected by direction of wave
-		local zPos = dir.Y * (amplitude * math.cos(f))
+		local displacement = k * (dir:Dot(xzPos) - speed * os.clock())
+
+		-- Calculate displacement on every axis (xyz)
+		local xPos = dir.X * (amplitude * math.cos(displacement))
+		local yPos = amplitude * math.sin(displacement) -- Y-Position is not affected by direction of wave
+		local zPos = dir.Y * (amplitude * math.cos(displacement))
 
 		finalDisplacement += Vector3.new(xPos, yPos, zPos) -- Add this wave to final displacement
 	end
 	return finalDisplacement
 end
 
--- Add a connection for a floating part
+-- Update cached variables used by GerstnerWave function
+function Wave:UpdateCachedVars()
+	self._cachedVars = {}
+	for waveName, waveSetting in pairs(self._waveSettings) do
+		-- Get settings: from this wave, from generalSettings or from default
+		local waveLength = waveSetting.WaveLength or self._generalSettings.WaveLength or default.WaveLength
+		local gravity = waveSetting.Gravity or self._generalSettings.Gravity or default.Gravity
+		local direction = waveSetting.Direction or self._generalSettings.Direction or default.Direction
+		local steepness = waveSetting.Steepness or self._generalSettings.Steepness or default.Steepness
+
+		-- Variables that don't change on tick
+		local k = (2 * math.pi) / waveLength
+		local speed = math.sqrt(gravity / k)
+		local dir = direction.Unit
+		local amplitude = steepness / k
+
+		self._cachedVars[waveName] = {
+			K = k,
+			WaveSpeed = speed,
+			UnitDirection = dir,
+			Amplitude = amplitude,
+		}
+	end
+end
+
+-- Make a part float on the waves
 function Wave:AddFloatingPart(part)
-	local positionDragSpeed = 25 -- Speed at which positional drag can change
-	local rotationDragSpeed = 0.5 -- Speed at which rotational drag can change
-	local attachmentForceSpeed = 15 -- Speed at which force per attachment can change
-	local waterDrag = 1000
+	local positionDrag = 2500
+	local rotationDrag = 1
 
 	if typeof(part) ~= "Instance" then
 		error("Part must be a valid Instance.")
@@ -140,22 +178,28 @@ function Wave:AddFloatingPart(part)
 	waterDragForce.Force = Vector3.new(0, 0, 0)
 	waterDragForce.Parent = part
 
-	local waterDragTorque = Instance.new("BodyAngularVelocity")
-	waterDragTorque.AngularVelocity = Vector3.new(0, 0, 0)
-	local max = part.AssemblyMass * 125
-	waterDragTorque.MaxTorque = Vector3.new(max, max, max)
-	waterDragTorque.P = math.huge
+
+	-- Attachment at part position
+	local attach = Instance.new("Attachment")
+	attach.Parent = part
+
+	local waterDragTorque = Instance.new("Torque")
+	waterDragTorque.Attachment0 = attach
+	waterDragTorque.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
+	waterDragTorque.Enabled = false
 	waterDragTorque.Parent = part
 
-	local gravity = workspace.Gravity / 4 -- Force of gravity per attachment
-	local currentPositionalDrag = Vector3.new(0, 0, 0)
-	local currentRotationalDrag = Vector3.new(0, 0, 0)
-	local currentAttachmentForces = {}
-	for attach, _ in pairs(attachments) do
-		currentAttachmentForces[attach] = Vector3.new(0, 0, 0)
-	end
 
-	RunService.Heartbeat:Connect(function(dt)
+	--local waterDragTorque = Instance.new("BodyAngularVelocity")
+	--waterDragTorque.AngularVelocity = Vector3.new(0, 0, 0)
+	--local max = part.AssemblyMass * 125
+	--waterDragTorque.MaxTorque = Vector3.new(max, max, max)
+	--waterDragTorque.P = math.huge
+	--waterDragTorque.Parent = part
+
+	local gravity = workspace.Gravity / 4 -- Force of gravity per attachment
+
+	RunService.Stepped:Connect(function()
 		-- Wave height at part's xz-position
 		local waveHeight = self._instance.Position.Y
 			+ self:GerstnerWave(Vector2.new(part.Position.X, part.Position.Z)).Y
@@ -163,24 +207,21 @@ function Wave:AddFloatingPart(part)
 		local depthBeforeSubmerged = 1
 		local displacementAmount = 3
 		local displacementModifier =
-			math.clamp((waveHeight - part.Position.Y) / depthBeforeSubmerged * displacementAmount, 0, 1.25)
+			math.clamp((waveHeight - part.Position.Y) / depthBeforeSubmerged * displacementAmount, 0, 1)
 
-		-- Water drag force on part (BodyForce)
+		-- Water drag force on part
 		if math.abs(part.Position.Y - waveHeight) > 5 and part.Position.Y > waveHeight then
 			-- Disable drag (part is above wave)
 			waterDragForce.Force = Vector3.new(0, 0, 0)
-			waterDragTorque.AngularVelocity = Vector3.new(0, 0, 0)
+			--waterDragTorque.AngularVelocity = Vector3.new(0, 0, 0)
+			waterDragTorque.Enabled = false
 		else
-			-- Position drag
-			local newPosForce = -part.Velocity * displacementModifier * waterDrag
-			currentPositionalDrag += (newPosForce - currentPositionalDrag) * math.min(dt * positionDragSpeed, 1)
-			-- Rotational drag
-			local newRotDrag = -part.AssemblyAngularVelocity * displacementModifier * waterDrag
-			currentRotationalDrag += (newRotDrag - currentRotationalDrag) * math.min(dt * rotationDragSpeed, 1)
+			-- Update drag forces
+			waterDragForce.Force = -part.Velocity * displacementModifier * positionDrag
 
-			-- Update forces (slowy/"tween")
-			waterDragForce.Force = currentPositionalDrag
-			waterDragTorque.AngularVelocity = currentRotationalDrag
+			waterDragTorque.Enabled = true
+			waterDragTorque.Torque = (-part.AssemblyAngularVelocity * part.AssemblyMass) * displacementModifier * rotationDrag
+			--waterDragTorque.AngularVelocity = -part.AssemblyAngularVelocity * displacementModifier * rotationDrag
 		end
 
 		-- Force per attachment
@@ -191,15 +232,17 @@ function Wave:AddFloatingPart(part)
 
 			-- Set force of attachment
 			local destPos
-			if p.Y < waveHeight then -- Check if attachment is under wave
-				-- Buoyancy force at this attachment (smooth movement)
-				destPos = Vector3.new(0, gravity * part.AssemblyMass * displacementModifier, 0)
+			if p.Y < waveHeight then -- Check if attachment is under water
+				-- * Buoyancy force is calculated without gravity!!
+				-- * Gravity * mass must be added to it!!
+				local grav = gravity * part.AssemblyMass
+				destPos = Vector3.new(0, (grav + gravity * part.AssemblyMass) * displacementModifier, 0)
 			else
-				-- Smoothly disable force
+				-- Disable force
 				destPos = Vector3.new(0, 0, 0)
 			end
-			currentAttachmentForces[attachment] += (destPos - currentAttachmentForces[attachment]) * math.min(dt * attachmentForceSpeed, 1)
-			force.Force = currentAttachmentForces[attachment]
+
+			force.Force = destPos
 		end
 	end)
 end
@@ -271,51 +314,49 @@ function Wave:AddPlayerFloat(player)
 	table.insert(self._connections, connection)
 end
 
--- Update every bone's transformation
-function Wave:Update()
-	for _, bone in pairs(self._bones) do
-		local worldPos = bone.WorldPosition
-		-- Check if PushPoint --> calculate position
-		local PushPoint = self._generalSettings.PushPoint
-		if PushPoint then
-			local PartPos = nil
-
-			if PushPoint:IsA("Attachment") then
-				PartPos = PushPoint.WorldPosition
-			elseif PushPoint:IsA("BasePart") then
-				PartPos = PushPoint.Position
-			else
-				error("Invalid class for FollowPart, must be a BasePart or an Attachment")
-				return
-			end
-
-			self._generalSettings.Direction = (PartPos - worldPos).Unit
-			self._generalSettings.Direction =
-				Vector2.new(self._generalSettings.Direction.X, self._generalSettings.Direction.Z)
-		end
-		-- If not PushPoint, then Direction is given inside of Settings (Vector2)
-
-		-- Transform bone
-		bone.Transform = CFrame.new(self:GerstnerWave(Vector2.new(worldPos.X, worldPos.Z)))
-	end
-end
-
 -- Connect function to RenderStepped
 function Wave:ConnectRenderStepped()
-	local Connection = RunService.RenderStepped:Connect(function()
-		local Character = LocalPlayer.Character
-		local Settings = self._generalSettings
-		-- Check if bone is close enough
-		if
-			not Character
-			or not Character.PrimaryPart
-			or (Character.PrimaryPart.Position - self._instance.Position).Magnitude < Settings.MaxDistance
-		then
-			self:Update()
+	local connection = RunService.RenderStepped:Connect(function()
+		-- Update every bone's transformation
+		debug.profilebegin("Update all bones of ocean")
+		for _, bone in pairs(self._bones) do
+			-- Check if bone is close enough to character
+			local worldPos = bone.WorldPosition
+			local char = LocalPlayer.Character
+			if not char then
+				return
+			end
+			local rootPart = char:FindFirstChild("HumanoidRootPart")
+			if rootPart and (rootPart.Position - worldPos).Magnitude <= self._generalSettings.MaxDistance then
+				-- Check if PushPoint --> calculate position
+				local PushPoint = self._generalSettings.PushPoint
+				if PushPoint then
+					local PartPos = nil
+
+					if PushPoint:IsA("Attachment") then
+						PartPos = PushPoint.WorldPosition
+					elseif PushPoint:IsA("BasePart") then
+						PartPos = PushPoint.Position
+					else
+						error("Invalid class for FollowPart, must be a BasePart or an Attachment")
+						return
+					end
+
+					self._generalSettings.Direction = (PartPos - worldPos).Unit
+					self._generalSettings.Direction =
+						Vector2.new(self._generalSettings.Direction.X, self._generalSettings.Direction.Z)
+				end
+				-- If not PushPoint, then Direction is given inside of Settings (Vector2)
+
+				-- Transform bone
+				bone.Transform = CFrame.new(self:GerstnerWave(Vector2.new(worldPos.X, worldPos.Z)))
+			end
 		end
+		debug.profileend()
 	end)
-	table.insert(self._connections, Connection)
-	return Connection
+	table.insert(self._connections, connection)
+
+	return connection
 end
 
 -- Destroy the Wave "object"

@@ -15,7 +15,7 @@ floatPart.Parent = workspace
 
 local test = {
 	Gravity = 9.81,
-	MaxDistance = 1000,
+	MaxDistance = 500,
 	Wave1 = {
 		WaveLength = 150,
 		Steepness = 0.4,
